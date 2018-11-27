@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"math"
 	"math/rand"
+	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -14,10 +16,7 @@ const (
 
 // Front returns the head node of the list.
 func (list *SkipList) Front() *Element {
-	list.mutex.RLock()
-	front := list.next[0]
-	list.mutex.RUnlock()
-	return front
+	return list.elementNode.Next()
 }
 
 // Set inserts a value in the list with the specified key, ordered by the key.
@@ -31,7 +30,7 @@ func (list *SkipList) Set(key []byte, value interface{}) *Element {
 	var element *Element
 	prevs := list.getPrevElementNodes(key)
 
-	if element = prevs[0].next[0]; element != nil && bytes.Compare(element.key, key) <= 0 {
+	if element = prevs[0].Next(); element != nil && bytes.Compare(element.key, key) <= 0 {
 		element.value = value
 		return element
 	}
@@ -39,15 +38,15 @@ func (list *SkipList) Set(key []byte, value interface{}) *Element {
 	element = &Element{
 		elementNode: elementNode{
 			list: list,
-			next: make([]*Element, list.randLevel()),
+			next: make([]unsafe.Pointer, list.randLevel()),
 		},
 		key:   key,
 		value: value,
 	}
 
 	for i := range element.next {
-		element.next[i] = prevs[i].next[i]
-		prevs[i].next[i] = element
+		atomic.StorePointer(&element.next[i], prevs[i].next[i])
+		atomic.StorePointer(&prevs[i].next[i], unsafe.Pointer(element))
 	}
 
 	list.Length++
@@ -64,11 +63,11 @@ func (list *SkipList) Get(key []byte) *Element {
 	var next *Element
 
 	for i := list.maxLevel - 1; i >= 0; i-- {
-		next = prev.next[i]
+		next = prev.NextAt(i)
 
 		for next != nil && bytes.Compare(key, next.key) > 0 {
 			prev = &next.elementNode
-			next = next.next[i]
+			next = next.NextAt(i)
 		}
 	}
 
@@ -88,9 +87,9 @@ func (list *SkipList) Remove(key []byte) *Element {
 	prevs := list.getPrevElementNodes(key)
 
 	// found the element, remove it
-	if element := prevs[0].next[0]; element != nil && bytes.Compare(element.key, key) <= 0 {
-		for k, v := range element.next {
-			prevs[k].next[k] = v
+	if element := prevs[0].Next(); element != nil && bytes.Compare(element.key, key) <= 0 {
+		for k := range element.next {
+			atomic.StorePointer(&prevs[k].next[k], atomic.LoadPointer(&element.next[k]))
 		}
 
 		list.Length--
@@ -111,11 +110,11 @@ func (list *SkipList) getPrevElementNodes(key []byte) []*elementNode {
 	prevs := list.prevNodesCache
 
 	for i := list.maxLevel - 1; i >= 0; i-- {
-		next = prev.next[i]
+		next = prev.NextAt(i)
 
 		for next != nil && bytes.Compare(key, next.key) > 0 {
 			prev = &next.elementNode
-			next = next.next[i]
+			next = next.NextAt(i)
 		}
 
 		prevs[i] = prev
@@ -162,7 +161,7 @@ func NewWithMaxLevel(maxLevel int) *SkipList {
 	}
 
 	return &SkipList{
-		elementNode:    elementNode{next: make([]*Element, DefaultMaxLevel)},
+		elementNode:    elementNode{next: make([]unsafe.Pointer, DefaultMaxLevel)},
 		prevNodesCache: make([]*elementNode, DefaultMaxLevel),
 		maxLevel:       maxLevel,
 		randSource:     rand.New(rand.NewSource(time.Now().UnixNano())),

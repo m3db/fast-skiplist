@@ -3,11 +3,21 @@ package skiplist
 import (
 	"math/rand"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 type elementNode struct {
 	list *SkipList
-	next []*Element
+	next []unsafe.Pointer
+}
+
+func (n *elementNode) Next() *Element {
+	return n.NextAt(0)
+}
+
+func (n *elementNode) NextAt(i int) *Element {
+	return (*Element)(atomic.LoadPointer(&n.next[i]))
 }
 
 type Element struct {
@@ -29,10 +39,7 @@ func (e *Element) Value() interface{} {
 // Next returns the following Element or nil if we're at the end of the list.
 // Only operates on the bottom level of the skip list (a fully linked list).
 func (element *Element) Next() *Element {
-	element.list.mutex.RLock()
-	next := element.next[0]
-	element.list.mutex.RUnlock()
-	return next
+	return element.elementNode.Next()
 }
 
 type SkipList struct {

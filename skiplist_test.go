@@ -12,25 +12,31 @@ import (
 var benchList *SkipList
 var discard *Element
 var endianness = binary.BigEndian
+var numBenchKeys = uint64(1000001)
+var benchKeys []byte
 
 func init() {
 	// Initialize a big SkipList for the Get() benchmark
 	benchList = New()
 
-	numKeys := uint64(1000001)
-	keys := make([]byte, numKeys*8)
-	for i := uint64(0); i < numKeys; i++ {
-		endianness.PutUint64(keys[i*8:(i*8)+8], i)
+	benchKeys = make([]byte, numBenchKeys*8)
+	for i := uint64(0); i < numBenchKeys; i++ {
+		endianness.PutUint64(benchKeys[i*8:(i*8)+8], i)
 	}
 
-	for i := uint64(0); i < numKeys; i++ {
-		benchList.Set(keys[i*8:(i*8)+8], [1]byte{})
+	for i := uint64(0); i < numBenchKeys; i++ {
+		benchList.Set(benchKeys[i*8:(i*8)+8], [1]byte{})
 	}
 
 	// Display the sizes of our basic structs
 	var sl SkipList
 	var el Element
 	fmt.Printf("Structure sizes: SkipList is %v, Element is %v bytes\n", unsafe.Sizeof(sl), unsafe.Sizeof(el))
+}
+
+func benchKey(i int) []byte {
+	i = i % int(numBenchKeys)
+	return benchKeys[i*8 : (i*8)+8]
 }
 
 func orderedKey(i uint64) []byte {
@@ -43,18 +49,11 @@ func orderedKeyValue(key []byte) uint64 {
 	return endianness.Uint64(key)
 }
 
-func reverse(s string) string {
-	runes := []rune(s)
-	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-		runes[i], runes[j] = runes[j], runes[i]
-	}
-	return string(runes)
-}
-
 func checkSanity(list *SkipList, t *testing.T) {
 	// each level must be correctly ordered
-	for k, v := range list.next {
+	for k := range list.next {
 		//t.Log("Level", k)
+		v := list.NextAt(k)
 
 		if v == nil {
 			continue
@@ -68,15 +67,15 @@ func checkSanity(list *SkipList, t *testing.T) {
 		cnt := 1
 
 		for next.next[k] != nil {
-			if !(bytes.Compare(next.next[k].key, next.key) >= 0) {
-				t.Fatalf("next key value must be greater than prev key value. [next:%v] [prev:%v]", next.next[k].key, next.key)
+			if !(bytes.Compare(next.NextAt(k).key, next.key) >= 0) {
+				t.Fatalf("next key value must be greater than prev key value. [next:%v] [prev:%v]", next.NextAt(k).key, next.key)
 			}
 
 			if k > len(next.next) {
 				t.Fatalf("node's level must be no less than current level. [cur:%v] [node:%v]", k, next.next)
 			}
 
-			next = next.next[k]
+			next = next.NextAt(k)
 			cnt++
 		}
 
@@ -212,7 +211,7 @@ func BenchmarkIncSet(b *testing.B) {
 	list := New()
 
 	for i := 0; i < b.N; i++ {
-		list.Set(orderedKey(uint64(i)), [1]byte{})
+		list.Set(benchKey(i), [1]byte{})
 	}
 
 	b.SetBytes(int64(b.N))
@@ -221,7 +220,7 @@ func BenchmarkIncSet(b *testing.B) {
 func BenchmarkIncGet(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		res := benchList.Get(orderedKey(uint64(i)))
+		res := benchList.Get(benchKey(i))
 		if res == nil {
 			b.Fatal("failed to Get an element that should exist")
 		}
@@ -235,7 +234,7 @@ func BenchmarkDecSet(b *testing.B) {
 	list := New()
 
 	for i := b.N; i > 0; i-- {
-		list.Set(orderedKey(uint64(i)), [1]byte{})
+		list.Set(benchKey(i), [1]byte{})
 	}
 
 	b.SetBytes(int64(b.N))
@@ -244,7 +243,7 @@ func BenchmarkDecSet(b *testing.B) {
 func BenchmarkDecGet(b *testing.B) {
 	b.ReportAllocs()
 	for i := b.N; i > 0; i-- {
-		res := benchList.Get(orderedKey(uint64(i)))
+		res := benchList.Get(benchKey(i))
 		if res == nil {
 			b.Fatal("failed to Get an element that should exist", i)
 		}
