@@ -1,6 +1,8 @@
 package skiplist
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"testing"
@@ -9,19 +11,44 @@ import (
 
 var benchList *SkipList
 var discard *Element
+var endianness = binary.BigEndian
 
 func init() {
 	// Initialize a big SkipList for the Get() benchmark
 	benchList = New()
 
-	for i := 0; i <= 10000000; i++ {
-		benchList.Set(float64(i), [1]byte{})
+	numKeys := uint64(1000001)
+	keys := make([]byte, numKeys*8)
+	for i := uint64(0); i < numKeys; i++ {
+		endianness.PutUint64(keys[i*8:(i*8)+8], i)
+	}
+
+	for i := uint64(0); i < numKeys; i++ {
+		benchList.Set(keys[i*8:(i*8)+8], [1]byte{})
 	}
 
 	// Display the sizes of our basic structs
 	var sl SkipList
 	var el Element
 	fmt.Printf("Structure sizes: SkipList is %v, Element is %v bytes\n", unsafe.Sizeof(sl), unsafe.Sizeof(el))
+}
+
+func orderedKey(i uint64) []byte {
+	var buff [8]byte
+	endianness.PutUint64(buff[:], i)
+	return buff[:]
+}
+
+func orderedKeyValue(key []byte) uint64 {
+	return endianness.Uint64(key)
+}
+
+func reverse(s string) string {
+	runes := []rune(s)
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+	return string(runes)
 }
 
 func checkSanity(list *SkipList, t *testing.T) {
@@ -41,7 +68,7 @@ func checkSanity(list *SkipList, t *testing.T) {
 		cnt := 1
 
 		for next.next[k] != nil {
-			if !(next.next[k].key >= next.key) {
+			if !(bytes.Compare(next.next[k].key, next.key) >= 0) {
 				t.Fatalf("next key value must be greater than prev key value. [next:%v] [prev:%v]", next.next[k].key, next.key)
 			}
 
@@ -66,28 +93,28 @@ func TestBasicIntCRUD(t *testing.T) {
 
 	list = New()
 
-	list.Set(10, 1)
-	list.Set(60, 2)
-	list.Set(30, 3)
-	list.Set(20, 4)
-	list.Set(90, 5)
+	list.Set([]byte("10"), 1)
+	list.Set([]byte("60"), 2)
+	list.Set([]byte("30"), 3)
+	list.Set([]byte("20"), 4)
+	list.Set([]byte("90"), 5)
 	checkSanity(list, t)
 
-	list.Set(30, 9)
+	list.Set([]byte("30"), 9)
 	checkSanity(list, t)
 
-	list.Remove(0)
-	list.Remove(20)
+	list.Remove([]byte("0"))
+	list.Remove([]byte("20"))
 	checkSanity(list, t)
 
-	v1 := list.Get(10)
-	v2 := list.Get(60)
-	v3 := list.Get(30)
-	v4 := list.Get(20)
-	v5 := list.Get(90)
-	v6 := list.Get(0)
+	v1 := list.Get([]byte("10"))
+	v2 := list.Get([]byte("60"))
+	v3 := list.Get([]byte("30"))
+	v4 := list.Get([]byte("20"))
+	v5 := list.Get([]byte("90"))
+	v6 := list.Get([]byte("0"))
 
-	if v1 == nil || v1.value.(int) != 1 || v1.key != 10 {
+	if v1 == nil || v1.value.(int) != 1 || bytes.Compare(v1.key, []byte("10")) != 0 {
 		t.Fatal(`wrong "10" value (expected "1")`, v1)
 	}
 
@@ -113,7 +140,7 @@ func TestBasicIntCRUD(t *testing.T) {
 }
 
 func TestChangeLevel(t *testing.T) {
-	var i float64
+	var i uint64
 	list := New()
 
 	if list.maxLevel != DefaultMaxLevel {
@@ -126,7 +153,7 @@ func TestChangeLevel(t *testing.T) {
 	}
 
 	for i = 1; i <= 201; i++ {
-		list.Set(i, i*10)
+		list.Set(orderedKey(i), i*10)
 	}
 
 	checkSanity(list, t)
@@ -136,7 +163,7 @@ func TestChangeLevel(t *testing.T) {
 	}
 
 	for c := list.Front(); c != nil; c = c.Next() {
-		if c.key*10 != c.value.(float64) {
+		if orderedKeyValue(c.key)*10 != c.value.(uint64) {
 			t.Fatal("wrong list element value")
 		}
 	}
@@ -161,15 +188,15 @@ func TestConcurrency(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 	go func() {
-		for i := 0; i < 100000; i++ {
-			list.Set(float64(i), i)
+		for i := uint64(0); i < 100000; i++ {
+			list.Set(orderedKey(i), i)
 		}
 		wg.Done()
 	}()
 
 	go func() {
-		for i := 0; i < 100000; i++ {
-			list.Get(float64(i))
+		for i := uint64(0); i < 100000; i++ {
+			list.Get(orderedKey(i))
 		}
 		wg.Done()
 	}()
@@ -185,7 +212,7 @@ func BenchmarkIncSet(b *testing.B) {
 	list := New()
 
 	for i := 0; i < b.N; i++ {
-		list.Set(float64(i), [1]byte{})
+		list.Set(orderedKey(uint64(i)), [1]byte{})
 	}
 
 	b.SetBytes(int64(b.N))
@@ -194,7 +221,7 @@ func BenchmarkIncSet(b *testing.B) {
 func BenchmarkIncGet(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		res := benchList.Get(float64(i))
+		res := benchList.Get(orderedKey(uint64(i)))
 		if res == nil {
 			b.Fatal("failed to Get an element that should exist")
 		}
@@ -208,7 +235,7 @@ func BenchmarkDecSet(b *testing.B) {
 	list := New()
 
 	for i := b.N; i > 0; i-- {
-		list.Set(float64(i), [1]byte{})
+		list.Set(orderedKey(uint64(i)), [1]byte{})
 	}
 
 	b.SetBytes(int64(b.N))
@@ -217,7 +244,7 @@ func BenchmarkDecSet(b *testing.B) {
 func BenchmarkDecGet(b *testing.B) {
 	b.ReportAllocs()
 	for i := b.N; i > 0; i-- {
-		res := benchList.Get(float64(i))
+		res := benchList.Get(orderedKey(uint64(i)))
 		if res == nil {
 			b.Fatal("failed to Get an element that should exist", i)
 		}

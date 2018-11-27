@@ -6,17 +6,18 @@ import (
 )
 
 type elementNode struct {
+	list *SkipList
 	next []*Element
 }
 
 type Element struct {
 	elementNode
-	key   float64
+	key   []byte
 	value interface{}
 }
 
 // Key allows retrieval of the key for a given Element
-func (e *Element) Key() float64 {
+func (e *Element) Key() []byte {
 	return e.key
 }
 
@@ -28,7 +29,10 @@ func (e *Element) Value() interface{} {
 // Next returns the following Element or nil if we're at the end of the list.
 // Only operates on the bottom level of the skip list (a fully linked list).
 func (element *Element) Next() *Element {
-	return element.next[0]
+	element.list.mutex.RLock()
+	next := element.next[0]
+	element.list.mutex.RUnlock()
+	return next
 }
 
 type SkipList struct {
