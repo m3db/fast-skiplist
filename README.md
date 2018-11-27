@@ -1,6 +1,6 @@
 ##  fast-skiplist
 
-
+## Note: This is a fork of [github.com/sean-public/fast-skiplist](http://github.com/sean-public/fast-skiplist) that provides a fast skiplist using `[]byte` as the key instead of `float64`. This is useful for places where the key is `[]byte` instead of something that can be represented by `float64`.
 
 ### Purpose
 
@@ -113,7 +113,7 @@ This implementation of a search finger does not suffer the usual problem of "cli
 
 ### Benchmarks
 
-Speed is a feature! Below is a set of results demonstrating the flat performance (time per operation) as the list grows to millions of elements. Please see the [skiplist-survey](https://github.com/sean-public/skiplist-survey) repo for complete benchmark results from this and other Go skip list implementations. 
+Speed is a feature! Below is a set of results demonstrating the flat performance (time per operation) as the list grows to millions of elements. Please see the [skiplist-survey](https://github.com/sean-public/skiplist-survey) repo for complete benchmark results from this and other Go skip list implementations.
 
 ![benchmark results chart](http://i.imgur.com/VqUbsWr.png)
 
